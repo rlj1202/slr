@@ -66,9 +66,10 @@ func NewGenerator(source string) *Generator {
 	generator.itemSets = make([]*itemSet, 0)
 	generator.itemSetIndex = make(map[item]int)
 
-	fmt.Println("input source = " + source)
-	fmt.Println()
+	return generator
+}
 
+func (generator *Generator) BuildParser() *Parser {
 	fmt.Println("symbols = ")
 	for i, symbol := range generator.grammar.symbols {
 		fmt.Printf("\t%02d: %s, %t\n", i, symbol.name, symbol.terminal)
@@ -137,17 +138,13 @@ func NewGenerator(source string) *Generator {
 	}
 	fmt.Println()
 
-	table := make([][]string, len(generator.symbols))
+	table := make([][]int, len(generator.symbols))
 	for i := range table {
-		table[i] = make([]string, len(generator.itemSets))
+		table[i] = make([]int, len(generator.itemSets))
 	}
 	for itemSetId, itemSet := range generator.itemSets {
 		for symId, gotoSetId := range itemSet.gotos {
-			if generator.symbols[symId].terminal {
-				table[symId][itemSetId] = fmt.Sprintf("s%d", gotoSetId)
-			} else {
-				table[symId][itemSetId] = fmt.Sprintf("%d", gotoSetId)
-			}
+			table[symId][itemSetId] = gotoSetId + 1 // shift for terminals and goto for non-terminals
 		}
 		for _, singleItem := range itemSet.items {
 			pro := generator.productions[singleItem.id]
@@ -155,7 +152,7 @@ func NewGenerator(source string) *Generator {
 			if singleItem.mark == pro.len {
 				followIds := generator.follows[pro.lhs]
 				for followId := range followIds {
-					table[followId][itemSetId] = fmt.Sprintf("r%d", singleItem.id)
+					table[followId][itemSetId] = -(singleItem.id + 1)
 				}
 			}
 		}
@@ -163,32 +160,30 @@ func NewGenerator(source string) *Generator {
 
 	fmt.Print("PS ")
 	for _, symbol := range generator.symbols {
-		if symbol.terminal {
-			fmt.Printf(" | %2s", symbol.name)
-		}
-	}
-	for _, symbol := range generator.symbols {
-		if !symbol.terminal {
-			fmt.Printf(" | %2s", symbol.name)
-		}
+		fmt.Printf(" | %2s", symbol.name)
 	}
 	fmt.Println()
 	for itemSetId := range generator.itemSets {
 		fmt.Printf("%02d ", itemSetId)
 		for symId := range generator.symbols {
-			if generator.symbols[symId].terminal {
-				fmt.Printf("   %2s", table[symId][itemSetId])
-			}
-		}
-		for symId := range generator.symbols {
-			if !generator.symbols[symId].terminal {
-				fmt.Printf("   %2s", table[symId][itemSetId])
+			inst := table[symId][itemSetId]
+
+			if inst == 0 {
+				fmt.Printf("     ")
+			} else if inst > 0 {
+				if generator.symbols[symId].terminal {
+					fmt.Printf("   s%d", inst-1)
+				} else {
+					fmt.Printf("   %2d", inst-1)
+				}
+			} else if inst < 0 {
+				fmt.Printf("   r%d", -inst-1)
 			}
 		}
 		fmt.Println()
 	}
 
-	return generator
+	return newParser(generator.grammar, table)
 }
 
 func (generator *Generator) first() {
